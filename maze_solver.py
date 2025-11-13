@@ -4,15 +4,12 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from collections import deque
 import random
+import matplotlib.pyplot as plt 
 
 class Maze:
     """5x5 Grid environment with walls to form a maze"""
     
     def __init__(self, maze_array=None):
-        """
-        Initialize maze
-        maze_array: 5x5 numpy array where 1=wall, 0=navigable
-        """
         self.size = 10
         self.start_pos = (0, 0)
         self.goal_pos = (self.size-1, self.size-1)
@@ -23,132 +20,100 @@ class Maze:
         self.reset()
 
     def generate_solvable_maze(self):
-        """Generate a random solvable 5x5 maze"""
         maze = np.zeros((self.size, self.size))
-        
-        # Add random walls (.10 = 10% density)
         for i in range(self.size):
             for j in range(self.size):
                 if random.random() < 0.2:
                     maze[i, j] = 1
         
-        # Ensure start and goal are open
         maze[self.start_pos] = 0
         maze[self.goal_pos] = 0
         
-        # Clear a guaranteed path (the top row and right column will be open)
         for i in range(self.size):
-            maze[0, i] = 0  # Top row
+            maze[0, i] = 0
         for i in range(self.size):
-            maze[i, self.size-1] = 0  # Right column
+            maze[i, self.size-1] = 0
         
         return maze
     
     def reset(self):
-        """Reset agent to start position."""
         self.agent_pos = list(self.start_pos)
         return self.get_state()
     
     def get_state(self):
-        """Return flattened state representation"""
         state = np.copy(self.maze).astype(float)
-        # Mark agent position
         state[self.agent_pos[0], self.agent_pos[1]] = 0.5
         return state.flatten()
     
     def step(self, action):
-        """
-        Execute action and return (next_state, reward, done, info)
-        Actions are 0=left, 1=up, 2=right, 3=down
-        """
         old_pos = self.agent_pos.copy()
-        
-        # Calculate distance to goal before move
         old_dist = abs(old_pos[0] - self.goal_pos[0]) + abs(old_pos[1] - self.goal_pos[1])
         
-        # Map actions to movements
-        if action == 0:   # left
+        if action == 0:
             self.agent_pos[1] -= 1
-        elif action == 1: # up
+        elif action == 1:
             self.agent_pos[0] -= 1
-        elif action == 2: # right
+        elif action == 2:
             self.agent_pos[1] += 1
-        elif action == 3: # down
+        elif action == 3:
             self.agent_pos[0] += 1
         
-        # Check boundaries
         if (self.agent_pos[0] < 0 or self.agent_pos[0] >= self.size or
             self.agent_pos[1] < 0 or self.agent_pos[1] >= self.size):
             self.agent_pos = old_pos
             return self.get_state(), -0.1, False, {'hit': 'boundary'}
         
-        # Check walls
         if self.maze[self.agent_pos[0], self.agent_pos[1]] == 1:
             self.agent_pos = old_pos
             return self.get_state(), -0.2, False, {'hit': 'wall'}
         
-        # Check if goal reached
         if tuple(self.agent_pos) == self.goal_pos:
             return self.get_state(), 10, True, {'result': 'win'}
         
-        # Distance-based reward
         new_dist = abs(self.agent_pos[0] - self.goal_pos[0]) + abs(self.agent_pos[1] - self.goal_pos[1])
-        distance_reward = (old_dist - new_dist) * 1.0  # Reward for getting closer
+        distance_reward = (old_dist - new_dist)
         
-        # Small step penalty
         return self.get_state(), distance_reward - 0.1, False, {'result': 'move'}
 
 
 class DQNAgent:
-    """Deep Q-Network Agent with Target Network"""
-    
     def __init__(self, state_size, action_size):
         self.state_size = state_size
-        self.action_size = action_size  # 4 actions
+        self.action_size = action_size
         
-        # Hyperparameters
-        self.gamma = 0.99           # Discount factor
-        self.epsilon = 1.0          # Exploration rate
+        self.gamma = 0.99
+        self.epsilon = 1.0
         self.epsilon_min = 0.05
         self.epsilon_decay = 0.999
         self.learning_rate = 0.001
         self.batch_size = 128
-        self.update_target_freq = 10  # Update target network every N episodes
+        self.update_target_freq = 10
         
-        # Experience replay memory
         self.memory = deque(maxlen=50000)
         
-        # Build main and target networks
         self.model = self.build_model()
         self.target_model = self.build_model()
         self.update_target_model()
     
     def build_model(self):
-        """Build Deep Q-Network using Keras."""
-        model = keras.Sequential([ # 4 layer feedforward neural network
-            layers.Dense(64, activation='relu', input_shape=(self.state_size,)), # Layer 1: Dense, 64 neurons : Input = 25 numbers, walls=1 empty=0 agent=0.5
-            layers.Dense(64, activation='relu'), # Layer 2: Dense, 64 neurons : Input = 64 numbers from Layer 1
-            layers.Dense(32, activation='relu'), # Layer 3: Dense, 32 neurons : Input = 64 numbers from Layer 2
-            layers.Dense(self.action_size, activation='linear') # Layer 4: 4 neurons : Input = 32 numbers from Layer 3
+        model = keras.Sequential([
+            layers.Dense(64, activation='relu', input_shape=(self.state_size,)),
+            layers.Dense(64, activation='relu'),
+            layers.Dense(32, activation='relu'),
+            layers.Dense(self.action_size, activation='linear')
         ])
         
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate), # Adjust network weights to minimize error
-            loss='mse' # Mean Squared Error: (Q - Reward)^2 = MSE
-        )
-        
+        model.compile(optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
+                      loss='mse')
         return model
     
     def update_target_model(self):
-        """Copy weights from main model to target model"""
         self.target_model.set_weights(self.model.get_weights())
     
-    def remember(self, state, action, reward, next_state, done):
-        """Store experience in replay memory"""
-        self.memory.append((state, action, reward, next_state, done))
+    def remember(self, s, a, r, ns, d):
+        self.memory.append((s, a, r, ns, d))
     
     def act(self, state):
-        """Choose action using epsilon-greedy policy"""
         if np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
         
@@ -156,19 +121,17 @@ class DQNAgent:
         return np.argmax(q_values[0])
     
     def replay(self):
-        """Train on batch of experiences using target network"""
         if len(self.memory) < self.batch_size:
             return
         
         minibatch = random.sample(self.memory, self.batch_size)
         
-        states = np.array([experience[0] for experience in minibatch])
-        actions = np.array([experience[1] for experience in minibatch])
-        rewards = np.array([experience[2] for experience in minibatch])
-        next_states = np.array([experience[3] for experience in minibatch])
-        dones = np.array([experience[4] for experience in minibatch])
+        states = np.array([m[0] for m in minibatch])
+        actions = np.array([m[1] for m in minibatch])
+        rewards = np.array([m[2] for m in minibatch])
+        next_states = np.array([m[3] for m in minibatch])
+        dones = np.array([m[4] for m in minibatch])
         
-        # Q-learning update using target network
         targets = rewards + self.gamma * np.amax(
             self.target_model.predict(next_states, verbose=0), axis=1
         ) * (1 - dones)
@@ -179,16 +142,13 @@ class DQNAgent:
         
         self.model.fit(states, target_f, epochs=1, verbose=0)
         
-        # Decay exploration
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
+
 def train_agent(episodes=300, max_steps=100):
-    """
-    Train the DQN agent on maze solving with multiple random mazes
-    """
-    state_size = 100  # 10x10 flattened
-    action_size = 4   # 4 movement options
+    state_size = 100
+    action_size = 4
     
     agent = DQNAgent(state_size, action_size)
     
@@ -199,7 +159,6 @@ def train_agent(episodes=300, max_steps=100):
     print(f"Maze Size: 10x10 | Episodes: {episodes} | Max Steps: {max_steps}\n")
     
     for episode in range(episodes):
-        # Create new maze every episode for generalization
         maze = Maze()
         state = maze.reset()
         total_reward = 0
@@ -207,7 +166,7 @@ def train_agent(episodes=300, max_steps=100):
         
         for step in range(max_steps):
             action = agent.act(state)
-            next_state, reward, done, info = maze.step(action)
+            next_state, reward, done, _ = maze.step(action)
             
             agent.remember(state, action, reward, next_state, done)
             state = next_state
@@ -219,123 +178,79 @@ def train_agent(episodes=300, max_steps=100):
         
         agent.replay()
         
-        # Update target network periodically
         if (episode + 1) % agent.update_target_freq == 0:
             agent.update_target_model()
         
         scores.append(total_reward)
         win_history.append(1 if won else 0)
         
-        # Calculate win rate over last 20 episodes
-        win_rate = np.mean(win_history[-20:]) if len(win_history) >= 20 else 0
-        
         if (episode + 1) % 20 == 0:
             avg_score = np.mean(scores[-20:])
-            print(f"Episode {episode + 1}/{episodes} | "
-                  f"Avg Score: {avg_score:.2f} | "
-                  f"Win Rate (20): {win_rate:.2%} | "
-                  f"Epsilon: {agent.epsilon:.3f}")
+            win_rate = np.mean(win_history[-20:])
+            print(f"Episode {episode+1}/{episodes} | Avg Score: {avg_score:.2f} | Win Rate: {win_rate:.2%} | Epsilon: {agent.epsilon:.3f}")
     
     return agent, scores, win_history
 
 
 def test_agent(agent, num_episodes=5):
-    """Test trained agent on new random mazes"""
-    print("\n=== Testing Trained Agent on New Mazes ===")
-    
     wins = 0
-    total_steps = []
-    test_results = []  # Store maze and path for each test
+    test_results = []
     
     for episode in range(num_episodes):
-        maze = Maze()  # New random maze
+        maze = Maze()
         state = maze.reset()
         done = False
         steps = 0
-        total_reward = 0
-        path = [(0, 0)]  # Track the path taken
+        reward_sum = 0
+        path = [(0, 0)]
         
         while not done and steps < 100:
             action = np.argmax(agent.model.predict(state.reshape(1, -1), verbose=0)[0])
-            state, reward, done, info = maze.step(action)
+            state, reward, done, _ = maze.step(action)
             path.append(tuple(maze.agent_pos))
-            total_reward += reward
+            reward_sum += reward
             steps += 1
         
-        test_results.append((maze, path, done, steps, total_reward))
+        test_results.append((maze, path, done, steps, reward_sum))
         
-        if done: # If win
+        if done:
             wins += 1
-            total_steps.append(steps)
-            print(f"Test {episode + 1}: WIN in {steps} steps (Reward: {total_reward:.2f})")
-        else: # If lose
-            print(f"Test {episode + 1}: FAILED after {steps} steps (Reward: {total_reward:.2f})")
+            print(f"Test {episode+1}: WIN in {steps} steps")
+        else:
+            print(f"Test {episode+1}: FAILED after {steps} steps")
     
-    print(f"\nTest Win Rate: {wins}/{num_episodes} = {wins/num_episodes:.1%}")
-    if total_steps:
-        print(f"Avg steps to win: {np.mean(total_steps):.1f}")
-    
-    # Print grids for each test
-    print("\n" + "="*50)
-    print("TEST MAZES")
-    print("="*50)
-    print("Legend: S=Start, G=Goal, #=Wall")
-    print()
-    
-    for i, (maze, path, won, steps, reward) in enumerate(test_results):
-        print(f"\nTest {i + 1} - {'WIN' if won else 'FAILED'} ({steps} steps):")
-        print_maze_with_path(maze, path)
+    return test_results
 
 
-def print_maze_with_path(maze, path):
-    """Print the maze grid with the agent's path"""
-    grid = []
-    
-    # Create visual grid
-    for i in range(maze.size):
-        row = []
-        for j in range(maze.size):
-            if maze.maze[i, j] == 1:
-                row.append('#')  # Wall
-            else:
-                row.append(' ')  # Empty space
-        grid.append(row)
-    
-    # Mark the path
-    for pos in path[:-1]:  # All positions except final
-        if grid[pos[0]][pos[1]] == ' ':
-            grid[pos[0]][pos[1]] = '.'
-    
-    # Mark start, goal, and final position
-    grid[0][0] = 'S'
-    grid[self.size-1][self.size-1] = 'G'
-    
-    # Mark final position on loss
-    final_pos = path[-1]
-    if final_pos != (maze.size-1, maze.size-1) and final_pos != (0, 0):
-        grid[final_pos[0]][final_pos[1]] = 'X'
-    
-    # Print the grid
-    print("  " + "-" * maze.size*2+1)
-    for i, row in enumerate(grid):
-        print(f"{i} | " + " ".join(row) + " |")
-    print("  " + "-" * maze.size*2+1)
-    print("    " + " ".join(str(i) for i in range(maze.size)))
 
-def visualize_maze(maze, path):
-    grid = np.copy(maze.maze)
-    for (x,y) in path:
-        grid[x,y] = 0.5
-        grid[maze.start_pos] = 0.8
-        grid[maze.goal_pos] = 0.9
-        plt.imshow(grid, cmap='gray_r')
-        plt.title("Agent Path (S=0.8, G=0.9, Path=0.5)")
-        plt.show()
+#  VISUALIZATION OF PATH
+
+def plot_path(maze, path, index):
+    grid = np.copy(maze.maze).astype(float)
+
+    for (x, y) in path:
+        grid[x, y] = 0.5
+
+    grid[0, 0] = 0.8
+    grid[maze.size-1, maze.size-1] = 0.9
+
+    plt.subplot(1, 5, index+1)
+    plt.imshow(grid, cmap="viridis")
+    plt.title(f"Test {index+1}")
+    plt.axis("off")
+
+
+# RUN
 
 
 if __name__ == "__main__":
-    # Train 
     agent, scores, win_history = train_agent(episodes=1000, max_steps=200)
     
-    # Test
-    test_agent(agent, num_episodes=5)
+    results = test_agent(agent, num_episodes=5)
+
+    plt.figure(figsize=(20, 4))
+    for i, (maze, path, done, steps, reward) in enumerate(results):
+        plot_path(maze, path, i)
+
+    plt.tight_layout()
+    plt.show()
