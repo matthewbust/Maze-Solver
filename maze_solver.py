@@ -1,9 +1,11 @@
-import numpy as np
+import numpy as np 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from collections import deque
 import random
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 class Maze:
     """5x5 Grid environment with walls to form a maze"""
@@ -99,7 +101,6 @@ class Maze:
         # Small step penalty
         return self.get_state(), distance_reward - 0.04, False, {'result': 'move'}
 
-
 class DQNAgent:
     """Deep Q-Network Agent with Target Network"""
     
@@ -126,16 +127,16 @@ class DQNAgent:
     
     def build_model(self):
         """Build Deep Q-Network using Keras."""
-        model = keras.Sequential([ # 4 layer feedforward neural network
-            layers.Dense(64, activation='relu', input_shape=(self.state_size,)), # Layer 1: Dense, 64 neurons : Input = 25 numbers, walls=1 empty=0 agent=0.5
-            layers.Dense(64, activation='relu'), # Layer 2: Dense, 64 neurons : Input = 64 numbers from Layer 1
-            layers.Dense(32, activation='relu'), # Layer 3: Dense, 32 neurons : Input = 64 numbers from Layer 2
-            layers.Dense(self.action_size, activation='linear') # Layer 4: 4 neurons : Input = 32 numbers from Layer 3
+        model = keras.Sequential([
+            layers.Dense(64, activation='relu', input_shape=(self.state_size,)),
+            layers.Dense(64, activation='relu'),
+            layers.Dense(32, activation='relu'),
+            layers.Dense(self.action_size, activation='linear')
         ])
         
         model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate), # Adjust network weights to minimize error
-            loss='mse' # Mean Squared Error: (Q - Reward)^2 = MSE
+            optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
+            loss='mse'
         )
         
         return model
@@ -169,7 +170,6 @@ class DQNAgent:
         next_states = np.array([experience[3] for experience in minibatch])
         dones = np.array([experience[4] for experience in minibatch])
         
-        # Q-learning update using target network
         targets = rewards + self.gamma * np.amax(
             self.target_model.predict(next_states, verbose=0), axis=1
         ) * (1 - dones)
@@ -180,9 +180,45 @@ class DQNAgent:
         
         self.model.fit(states, target_f, epochs=1, verbose=0)
         
-        # Decay exploration
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+
+def animate_test(maze, path, delay=350):
+    """Animate the agent solving a maze."""
+    fig, ax = plt.subplots(figsize=(4, 4))
+
+    # Maze grid: walls=1 -> black, free=0 -> white
+    ax.imshow(maze.maze, cmap="gray_r")
+
+    # Draw start + goal
+    ax.text(0, 0, "S", color="green", ha="center", va="center", fontsize=14)
+    ax.text(4, 4, "G", color="blue", ha="center", va="center", fontsize=14)
+
+    # Agent point & # Path marker (red) (cyan)
+    agent_dot, = ax.plot([], [], "ro", markersize=10)
+    path_line, = ax.plot([], [], "c-", linewidth=2)
+
+    ax.set_xticks(range(5))
+    ax.set_yticks(range(5))
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.grid(color="black", linewidth=1)
+
+    def update(frame):
+        # Build path so far
+        xs = [p[1] for p in path[:frame+1]]
+        ys = [p[0] for p in path[:frame+1]]
+
+        path_line.set_data(xs, ys)
+        agent_dot.set_data(xs[-1], ys[-1])
+
+        return agent_dot, path_line
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=len(path), interval=delay, blit=True, repeat=False
+    )
+
+    plt.show()
 
 def train_agent(episodes=300, max_steps=100):
     """
@@ -200,7 +236,6 @@ def train_agent(episodes=300, max_steps=100):
     print(f"Maze Size: 5x5 | Episodes: {episodes} | Max Steps: {max_steps}\n")
     
     for episode in range(episodes):
-        # Create new maze every episode for generalization
         maze = Maze()
         state = maze.reset()
         total_reward = 0
@@ -220,14 +255,12 @@ def train_agent(episodes=300, max_steps=100):
         
         agent.replay()
         
-        # Update target network periodically
         if (episode + 1) % agent.update_target_freq == 0:
             agent.update_target_model()
         
         scores.append(total_reward)
         win_history.append(1 if won else 0)
         
-        # Calculate win rate over last 20 episodes
         win_rate = np.mean(win_history[-20:]) if len(win_history) >= 20 else 0
         
         if (episode + 1) % 20 == 0:
@@ -239,22 +272,21 @@ def train_agent(episodes=300, max_steps=100):
     
     return agent, scores, win_history
 
-
 def test_agent(agent, num_episodes=5):
     """Test trained agent on new random mazes"""
     print("\n=== Testing Trained Agent on New Mazes ===")
     
     wins = 0
     total_steps = []
-    test_results = []  # Store maze and path for each test
+    test_results = []
     
     for episode in range(num_episodes):
-        maze = Maze()  # New random maze
+        maze = Maze()
         state = maze.reset()
         done = False
         steps = 0
         total_reward = 0
-        path = [(0, 0)]  # Track the path taken
+        path = [(0, 0)]
         
         while not done and steps < 100:
             action = np.argmax(agent.model.predict(state.reshape(1, -1), verbose=0)[0])
@@ -265,68 +297,53 @@ def test_agent(agent, num_episodes=5):
         
         test_results.append((maze, path, done, steps, total_reward))
         
-        if done: # If win
+        if done:
             wins += 1
             total_steps.append(steps)
             print(f"Test {episode + 1}: WIN in {steps} steps (Reward: {total_reward:.2f})")
-        else: # If lose
+        else:
             print(f"Test {episode + 1}: FAILED after {steps} steps (Reward: {total_reward:.2f})")
     
     print(f"\nTest Win Rate: {wins}/{num_episodes} = {wins/num_episodes:.1%}")
     if total_steps:
         print(f"Avg steps to win: {np.mean(total_steps):.1f}")
-    
-    # Print grids for each test
-    print("\n" + "="*50)
-    print("TEST MAZES")
-    print("="*50)
-    print("Legend: S=Start, G=Goal, #=Wall")
-    print()
-    
-    for i, (maze, path, won, steps, reward) in enumerate(test_results):
-        print(f"\nTest {i + 1} - {'WIN' if won else 'FAILED'} ({steps} steps):")
-        print_maze_with_path(maze, path)
 
+    # TEXT + VISUALS
+    for i, (maze, path, won, steps, reward) in enumerate(test_results):
+        print(f"\nText view of Test {i + 1}: {'WIN' if won else 'FAILED'}, {steps} steps, reward={reward:.2f}")
+        print_maze_with_path(maze, path)
+        animate_test(maze, path, delay=350)   # <-- animation
 
 def print_maze_with_path(maze, path):
     """Print the maze grid with the agent's path"""
     grid = []
     
-    # Create visual grid
     for i in range(5):
         row = []
         for j in range(5):
             if maze.maze[i, j] == 1:
-                row.append('#')  # Wall
+                row.append('#')
             else:
-                row.append(' ')  # Empty space
+                row.append(' ')
         grid.append(row)
     
-    # Mark the path
-    for pos in path[:-1]:  # All positions except final
+    for pos in path[:-1]:
         if grid[pos[0]][pos[1]] == ' ':
             grid[pos[0]][pos[1]] = '.'
     
-    # Mark start, goal, and final position
     grid[0][0] = 'S'
     grid[4][4] = 'G'
     
-    # Mark final position on loss
     final_pos = path[-1]
     if final_pos != (4, 4) and final_pos != (0, 0):
         grid[final_pos[0]][final_pos[1]] = 'X'
     
-    # Print the grid
     print("  " + "-" * 11)
     for i, row in enumerate(grid):
         print(f"{i} | " + " ".join(row) + " |")
     print("  " + "-" * 11)
     print("    0 1 2 3 4")
 
-
 if __name__ == "__main__":
-    # Train 
     agent, scores, win_history = train_agent(episodes=300, max_steps=100)
-    
-    # Test
     test_agent(agent, num_episodes=5)
