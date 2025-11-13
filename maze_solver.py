@@ -13,35 +13,34 @@ class Maze:
         Initialize maze
         maze_array: 5x5 numpy array where 1=wall, 0=navigable
         """
+        self.size = 10
+        self.start_pos = (0, 0)
+        self.goal_pos = (self.size-1, self.size-1)
         if maze_array is None:
             self.maze = self.generate_solvable_maze()
         else:
             self.maze = maze_array
-        
-        self.size = 5
-        self.start_pos = (0, 0)  # Top-left
-        self.goal_pos = (4, 4)   # Bottom-right
         self.reset()
-    
+
     def generate_solvable_maze(self):
         """Generate a random solvable 5x5 maze"""
-        maze = np.zeros((5, 5))
+        maze = np.zeros((self.size, self.size))
         
         # Add random walls (.10 = 10% density)
-        for i in range(5):
-            for j in range(5):
-                if random.random() < 0.1:
+        for i in range(self.size):
+            for j in range(self.size):
+                if random.random() < 0.2:
                     maze[i, j] = 1
         
         # Ensure start and goal are open
-        maze[0, 0] = 0
-        maze[4, 4] = 0
+        maze[self.start_pos] = 0
+        maze[self.goal_pos] = 0
         
         # Clear a guaranteed path (the top row and right column will be open)
-        for i in range(5):
+        for i in range(self.size):
             maze[0, i] = 0  # Top row
-        for i in range(5):
-            maze[i, 4] = 0  # Right column
+        for i in range(self.size):
+            maze[i, self.size-1] = 0  # Right column
         
         return maze
     
@@ -81,23 +80,23 @@ class Maze:
         if (self.agent_pos[0] < 0 or self.agent_pos[0] >= self.size or
             self.agent_pos[1] < 0 or self.agent_pos[1] >= self.size):
             self.agent_pos = old_pos
-            return self.get_state(), -1.0, False, {'hit': 'boundary'}
+            return self.get_state(), -0.1, False, {'hit': 'boundary'}
         
         # Check walls
         if self.maze[self.agent_pos[0], self.agent_pos[1]] == 1:
             self.agent_pos = old_pos
-            return self.get_state(), -1.0, False, {'hit': 'wall'}
+            return self.get_state(), -0.2, False, {'hit': 'wall'}
         
         # Check if goal reached
         if tuple(self.agent_pos) == self.goal_pos:
-            return self.get_state(), 10.0, True, {'result': 'win'}
+            return self.get_state(), 10, True, {'result': 'win'}
         
         # Distance-based reward
         new_dist = abs(self.agent_pos[0] - self.goal_pos[0]) + abs(self.agent_pos[1] - self.goal_pos[1])
-        distance_reward = (old_dist - new_dist) * 0.1  # Reward for getting closer
+        distance_reward = (old_dist - new_dist) * 1.0  # Reward for getting closer
         
         # Small step penalty
-        return self.get_state(), distance_reward - 0.04, False, {'result': 'move'}
+        return self.get_state(), distance_reward - 0.1, False, {'result': 'move'}
 
 
 class DQNAgent:
@@ -108,16 +107,16 @@ class DQNAgent:
         self.action_size = action_size  # 4 actions
         
         # Hyperparameters
-        self.gamma = 0.95           # Discount factor
+        self.gamma = 0.99           # Discount factor
         self.epsilon = 1.0          # Exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
+        self.epsilon_min = 0.05
+        self.epsilon_decay = 0.999
         self.learning_rate = 0.001
-        self.batch_size = 32
+        self.batch_size = 128
         self.update_target_freq = 10  # Update target network every N episodes
         
         # Experience replay memory
-        self.memory = deque(maxlen=5000)
+        self.memory = deque(maxlen=50000)
         
         # Build main and target networks
         self.model = self.build_model()
@@ -188,7 +187,7 @@ def train_agent(episodes=300, max_steps=100):
     """
     Train the DQN agent on maze solving with multiple random mazes
     """
-    state_size = 25  # 5x5 flattened
+    state_size = 100  # 10x10 flattened
     action_size = 4   # 4 movement options
     
     agent = DQNAgent(state_size, action_size)
@@ -197,7 +196,7 @@ def train_agent(episodes=300, max_steps=100):
     win_history = []
     
     print("Begin Training")
-    print(f"Maze Size: 5x5 | Episodes: {episodes} | Max Steps: {max_steps}\n")
+    print(f"Maze Size: 10x10 | Episodes: {episodes} | Max Steps: {max_steps}\n")
     
     for episode in range(episodes):
         # Create new maze every episode for generalization
@@ -293,9 +292,9 @@ def print_maze_with_path(maze, path):
     grid = []
     
     # Create visual grid
-    for i in range(5):
+    for i in range(maze.size):
         row = []
-        for j in range(5):
+        for j in range(maze.size):
             if maze.maze[i, j] == 1:
                 row.append('#')  # Wall
             else:
@@ -309,24 +308,34 @@ def print_maze_with_path(maze, path):
     
     # Mark start, goal, and final position
     grid[0][0] = 'S'
-    grid[4][4] = 'G'
+    grid[self.size-1][self.size-1] = 'G'
     
     # Mark final position on loss
     final_pos = path[-1]
-    if final_pos != (4, 4) and final_pos != (0, 0):
+    if final_pos != (maze.size-1, maze.size-1) and final_pos != (0, 0):
         grid[final_pos[0]][final_pos[1]] = 'X'
     
     # Print the grid
-    print("  " + "-" * 11)
+    print("  " + "-" * maze.size*2+1)
     for i, row in enumerate(grid):
         print(f"{i} | " + " ".join(row) + " |")
-    print("  " + "-" * 11)
-    print("    0 1 2 3 4")
+    print("  " + "-" * maze.size*2+1)
+    print("    " + " ".join(str(i) for i in range(maze.size)))
+
+def visualize_maze(maze, path):
+    grid = np.copy(maze.maze)
+    for (x,y) in path:
+        grid[x,y] = 0.5
+        grid[maze.start_pos] = 0.8
+        grid[maze.goal_pos] = 0.9
+        plt.imshow(grid, cmap='gray_r')
+        plt.title("Agent Path (S=0.8, G=0.9, Path=0.5)")
+        plt.show()
 
 
 if __name__ == "__main__":
     # Train 
-    agent, scores, win_history = train_agent(episodes=300, max_steps=100)
+    agent, scores, win_history = train_agent(episodes=1000, max_steps=200)
     
     # Test
     test_agent(agent, num_episodes=5)
