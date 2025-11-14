@@ -602,7 +602,7 @@ if __name__ == "__main__":
             try:
                 os.remove('maze_agent_10x10.h5')
                 print("Old model deleted. Starting training...\n")
-                agent, maze, scores, win_history = train_agent(episodes=1000, max_steps=100)
+                agent, maze, scores, win_history = train_agent(episodes=500, max_steps=100)
                 print("\n--- Training Complete ---")
                 test_on_trained_maze(agent, maze, num_runs=5)
             except Exception as e:
@@ -614,45 +614,51 @@ if __name__ == "__main__":
     
     elif model_exists and maze_exists:
         print("\nTrained model and maze found!")
-        print("\nOptions:")
-        print("  1. Load existing model and test on training maze")
-        print("  2. Load and test against new random mazes")
-        print("  3. Retrain new model on new maze")
-        print("  4. Exit")
         
-        choice = input("\nEnter your choice (1-4): ").strip()
-        
-        if choice == '1':
-            # Load existing model and maze
-            try:
-                agent = DQNAgent.load(model_path)
-                maze = load_maze(maze_path)
-                if maze:
-                    test_on_trained_maze(agent, maze, num_runs=5)
-            except Exception as e:
-                print(f"\nError: Failed to load model: {e}")
-                print("Please choose option 3 to retrain.")
-        
-        elif choice == '2':
-            # Test on new mazes
-            try:
-                agent = DQNAgent.load(model_path)
-                test_agent(agent, num_episodes=5)
-            except Exception as e:
-                print(f"\nError: Failed to load model: {e}")
-        
-        elif choice == '3':
-            # Retrain
-            print("\n--- Starting New Training ---")
-            agent, maze, scores, win_history = train_agent(episodes=1000, max_steps=100)
-            print("\n--- Training Complete ---")
-            test_on_trained_maze(agent, maze, num_runs=5)
+        # Load the model and maze
+        try:
+            agent = DQNAgent.load(model_path)
+            maze = load_maze(maze_path)
             
-        elif choice == '4':
-            print("\nExiting...")
-            exit()
-        else:
-            print("\nInvalid choice. Exiting...")
+            if not maze:
+                print("\nError: Failed to load maze. Please retrain.")
+                exit()
+            
+            # Show menu after loading
+            while True:
+                print("\nOptions:")
+                print("  1. Test on training maze (5 runs)")
+                print("  2. Test on new random mazes (5 mazes)")
+                print("  3. Retrain new model on new maze")
+                print("  4. Exit")
+                
+                choice = input("\nEnter your choice (1-4): ").strip()
+                
+                if choice == '1':
+                    # Test on the saved training maze
+                    test_on_trained_maze(agent, maze, num_runs=5)
+                
+                elif choice == '2':
+                    # Test on new random mazes
+                    test_agent(agent, num_episodes=5)
+                
+                elif choice == '3':
+                    # Retrain
+                    print("\n--- Starting New Training ---")
+                    agent, maze, scores, win_history = train_agent(episodes=500, max_steps=100)
+                    print("\n--- Training Complete ---")
+                    test_on_trained_maze(agent, maze, num_runs=5)
+                    # Continue loop to allow more testing
+                    
+                elif choice == '4':
+                    print("\nExiting...")
+                    exit()
+                else:
+                    print("\nInvalid choice. Please try again.")
+                    
+        except Exception as e:
+            print(f"\nError: Failed to load model: {e}")
+            print("Please delete the models folder and retrain.")
             exit()
     
     elif model_exists and not maze_exists:
@@ -666,7 +672,7 @@ if __name__ == "__main__":
         
         if choice == '1':
             print("\n--- Starting New Training ---")
-            agent, maze, scores, win_history = train_agent(episodes=1000, max_steps=100)
+            agent, maze, scores, win_history = train_agent(episodes=500, max_steps=100)
             print("\n--- Training Complete ---")
             test_on_trained_maze(agent, maze, num_runs=5)
         else:
@@ -674,7 +680,7 @@ if __name__ == "__main__":
             exit()
     
     else:
-        print("\n No trained model found. Starting training...\n")
-        agent, maze, scores, win_history = train_agent(episodes=1000, max_steps=100)
+        print("\nNo trained model found. Starting training...\n")
+        agent, maze, scores, win_history = train_agent(episodes=500, max_steps=100)
         print("\n--- Training Complete ---")
         test_on_trained_maze(agent, maze, num_runs=5)
