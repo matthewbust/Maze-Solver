@@ -1,0 +1,10 @@
+{
+    "epsilon": 0.4016064652978155,
+    "state_size": 300,
+    "action_size": 4,
+    "gamma": 0.99,
+    "epsilon_min": 0.05,
+    "epsilon_decay": 0.995,
+    "learning_rate": 0.005,
+    "batch_size": 64
+}
