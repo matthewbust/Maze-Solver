@@ -429,7 +429,7 @@ def train_agent(episodes=300, max_steps=100, maze=None):
 				best_weights = agent.model.get_weights()
 				
 				if win_rate >= 0.95:  # 95% win rate threshold
-					print(f"\n🎯 Excellent performance achieved! Win rate: {win_rate:.2%}")
+					print(f"\nGood performance achieved! Win rate: {win_rate:.2%}")
 					print(f"Stopping early at episode {episode + 1}")
 					break
 			else:
